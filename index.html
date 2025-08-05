@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Tabola Bale - Cinematic Lyrics</title>
+  <title>Tabola Bale - Synced Lyrics</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -57,12 +57,39 @@
       width: 100%;
       max-width: 500px;
       margin: 0 auto 2rem;
+      position: relative;
     }
     
     audio {
       width: 100%;
       border-radius: 50px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    
+    .sync-controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      justify-content: center;
+    }
+    
+    .sync-btn {
+      padding: 5px 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.1);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.3s;
+    }
+    
+    .sync-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    
+    .sync-btn.active {
+      background: var(--primary);
     }
     
     .lyrics-container {
@@ -72,28 +99,34 @@
       position: relative;
       min-height: 60vh;
       perspective: 1000px;
+      overflow: hidden;
+    }
+    
+    .lyrics-scroller {
+      transition: transform 0.5s ease-out;
     }
     
     .lyrics-line {
-      position: absolute;
       width: 100%;
       text-align: center;
       font-size: 2rem;
       font-weight: 600;
-      opacity: 0;
-      transition: all 0.8s ease;
-      transform: translateY(50px) rotateX(20deg);
+      margin: 1.5rem 0;
+      opacity: 0.3;
+      transition: all 0.5s cubic-bezier(0.2, 0.8, 0.4, 1);
+      transform: scale(0.95);
       text-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
     
     .lyrics-line.active {
       opacity: 1;
-      transform: translateY(0) rotateX(0);
+      transform: scale(1);
     }
     
     .lyrics-line.highlight {
       color: var(--secondary);
       font-size: 2.2rem;
+      opacity: 1;
       text-shadow: 0 0 15px rgba(255,204,0,0.7);
     }
     
@@ -101,32 +134,29 @@
       font-size: 1.8rem;
       color: var(--primary);
       font-weight: 700;
+      opacity: 1;
     }
     
-    .background-effects {
+    .lyrics-line.past {
+      opacity: 0.2;
+      transform: scale(0.9);
+    }
+    
+    .progress-bar {
       position: fixed;
-      top: 0;
+      bottom: 0;
       left: 0;
       width: 100%;
+      height: 3px;
+      background: rgba(255,255,255,0.1);
+      z-index: 100;
+    }
+    
+    .progress {
       height: 100%;
-      z-index: -1;
-      overflow: hidden;
-    }
-    
-    .effect-circle {
-      position: absolute;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(255,77,77,0.2) 0%, rgba(255,77,77,0) 70%);
-      animation: float 15s infinite linear;
-    }
-    
-    @keyframes float {
-      0% {
-        transform: translateY(0) rotate(0deg);
-      }
-      100% {
-        transform: translateY(-100vh) rotate(360deg);
-      }
+      background: linear-gradient(to right, var(--primary), var(--secondary));
+      width: 0%;
+      transition: width 0.1s linear;
     }
     
     @media (max-width: 768px) {
@@ -136,6 +166,7 @@
       
       .lyrics-line {
         font-size: 1.5rem;
+        margin: 1rem 0;
       }
       
       .lyrics-line.highlight {
@@ -154,98 +185,131 @@
     <div class="artist">Silet Open Up ft. Jacson Zeran, Juan Reza, Diva Aurel</div>
     <div class="audio-container">
       <audio id="audio" controls>
-        <source src="ytmp3free.cc_tabola-bale-silet-open-up-ft-jacson-zeran-juan-reza-diva-aurel-lirik-lagu-timur-terbaru-2025-youtubemp3free.org.mp3" type="audio/mpeg">
+        <source src="tabola-bale.mp3" type="audio/mpeg">
         Your browser does not support the audio element.
       </audio>
+      <div class="sync-controls">
+        <button class="sync-btn" id="sync-back">← 0.5s</button>
+        <button class="sync-btn" id="sync-forward">→ 0.5s</button>
+        <button class="sync-btn" id="sync-reset">Reset Sync</button>
+      </div>
     </div>
   </header>
   
-  <div class="lyrics-container" id="lyrics">
-    <!-- Lyrics will be dynamically inserted here -->
+  <div class="lyrics-container">
+    <div class="lyrics-scroller" id="lyrics">
+      <!-- Lyrics will be dynamically inserted here -->
+    </div>
   </div>
   
-  <div class="background-effects" id="effects"></div>
+  <div class="progress-bar">
+    <div class="progress" id="progress"></div>
+  </div>
 
   <script>
+    // Lyrics data with precise timing (in seconds)
     const lyrics = [
-      { time: 0, text: "Kaka tabola bale lia ade nona e", type: "normal" },
-      { time: 4, text: "Su makin manyala e", type: "normal" },
-      { time: 8, text: "Kaka hati susah e", type: "normal" },
-      { time: 12, text: "Dulu denai la suko mancaliak uda bakawan", type: "normal" },
-      { time: 16, text: "Raso-raso ko ado, tapi denai diamkan (hei!)", type: "highlight" },
-      { time: 20, text: "Lia ade nona makin gaga", type: "normal" },
-      { time: 24, text: "Bikin kaka jadi suka", type: "normal" },
-      { time: 28, text: "Dulu ade rambu kepang dua", type: "normal" },
-      { time: 32, text: "Sekarang rambu merah merah", type: "highlight" },
-      { time: 36, text: "Kaka lia ade tambah manis", type: "normal" },
-      { time: 40, text: "Pulang rantau dari mana", type: "normal" },
-      { time: 44, text: "Adu ade nona jang talalu", type: "normal" },
-      { time: 48, text: "Pasang gaya depan kaka", type: "highlight" },
-      { time: 52, text: "Kaka jadi jatoh e", type: "normal" },
-      { time: 56, text: "Kaka tabola bale lia ade nona e", type: "normal" },
-      { time: 60, text: "Su makin manyala e", type: "normal" },
-      { time: 64, text: "Kaka hati susah e", type: "normal" },
-      { time: 68, text: "Ade bikin kaka mete", type: "normal" },
-      { time: 72, text: "Tidur malam bola bale", type: "normal" },
-      { time: 76, text: "Sejak kaka lia ade", type: "normal" },
-      { time: 80, text: "Aduh Tuhan ampun e", type: "highlight" },
-      { time: 84, text: "Ade lewat lorong depan rumah", type: "rap" },
-      { time: 88, text: "Kaka jadi salting sampe mood berubah", type: "rap" },
-      { time: 92, text: "Smangat tiba-tiba gara-gara ade nona", type: "rap" },
-      { time: 96, text: "Ini bidadari timur siapa yang punya", type: "rap" },
-      { time: 100, text: "Kaka lacak ko pu nama", type: "rap" },
-      { time: 104, text: "Barang itu tra pake lama", type: "rap" },
-      { time: 108, text: "Langsung tanya di ko pu mama", type: "rap" },
-      { time: 112, text: "Ternyata ade nona ko pu nama maimuna", type: "rap" },
-      { time: 116, text: "Eh maimuna ehh lucunya", type: "rap" },
-      { time: 120, text: "Kaka harap bisa satu rumah", type: "rap" },
-      { time: 124, text: "Kalo trima sa pu cinta", type: "rap" },
-      { time: 128, text: "Kaka janji kita langsung menikah", type: "rap" },
-      { time: 132, text: "Ondeh uda jan baitu bana", type: "normal" },
-      { time: 136, text: "Denai ko indaklah nan sarupo itu", type: "normal" },
-      { time: 140, text: "Dek hanyo takuik mancaliak uda", type: "normal" },
-      { time: 144, text: "Acok mabuak mabuakan", type: "highlight" },
-      { time: 148, text: "Dulu denai lah suko", type: "normal" },
-      { time: 152, text: "Mancaliak uda bakawan", type: "normal" },
-      { time: 156, text: "Raso raso ko ado", type: "normal" },
-      { time: 160, text: "Tapi denai diamkan", type: "highlight" },
-      { time: 164, text: "A wadaw wadaw ini ana gaga law", type: "rap" },
-      { time: 168, text: "Su bale jawa tamba bening aja la", type: "rap" },
-      { time: 172, text: "Gaya semakin beda bibir mera mera", type: "rap" },
-      { time: 176, text: "Ado mama mama ini siapa punya ana", type: "rap" },
-      { time: 180, text: "Dulu masi kici kici kici nona", type: "rap" },
-      { time: 184, text: "Sekarang bale jawa makin cantik nona", type: "rap" },
-      { time: 188, text: "Ko perfek sekali asli bidadari", type: "rap" },
-      { time: 192, text: "Jatuh dari langit", type: "rap" },
-      { time: 196, text: "Kalo jadi dengan ade", type: "normal" },
-      { time: 200, text: "Kaka pasti stop bamabo to", type: "normal" },
-      { time: 204, text: "Su pasti kaka ni ade pu jodoh", type: "normal" },
-      { time: 208, text: "Sumpa ni jao sodho iwa mbodho", type: "highlight" },
-      { time: 212, text: "Lia ade nona makin gaga", type: "normal" },
-      { time: 216, text: "Bikin kaka jadi suka", type: "normal" },
-      { time: 220, text: "Dulu ade rambu kepang dua", type: "normal" },
-      { time: 224, text: "Sekarang rambu merah merah", type: "highlight" },
-      { time: 228, text: "Kaka lia ade tambah manis", type: "normal" },
-      { time: 232, text: "Pulang rantau dari mana", type: "normal" },
-      { time: 236, text: "Adu ade nona jang talalu", type: "normal" },
-      { time: 240, text: "Pasang gaya depan kaka", type: "highlight" },
-      { time: 244, text: "Kaka jadi jatoh e", type: "normal" },
-      { time: 248, text: "Kaka tabola bale lia ade nona e", type: "normal" },
-      { time: 252, text: "Su makin manyala e", type: "normal" },
-      { time: 256, text: "Kaka hati susah e", type: "normal" },
-      { time: 260, text: "Ade bikin kaka mete", type: "normal" },
-      { time: 264, text: "Tidur malam bola bale", type: "normal" },
-      { time: 268, text: "Sejak kaka lia ade", type: "normal" },
-      { time: 272, text: "Aduh Tuhan ampun e", type: "highlight" },
-      { time: 276, text: "Ade bikin kaka mete", type: "normal" },
-      { time: 280, text: "Tidur malam bola bale", type: "normal" },
-      { time: 284, text: "Sejak kaka lia ade", type: "normal" },
-      { time: 288, text: "Aduh Tuhan ampun e", type: "highlight" }
+      // Intro
+      { time: 0.0, text: "Kaka tabola bale lia ade nona e", type: "normal" },
+      { time: 3.8, text: "Su makin manyala e", type: "normal" },
+      { time: 7.5, text: "Kaka hati susah e", type: "normal" },
+      { time: 11.2, text: "Dulu denai la suko mancaliak uda bakawan", type: "normal" },
+      { time: 15.0, text: "Raso-raso ko ado, tapi denai diamkan (hei!)", type: "highlight" },
+      
+      // Verse 1
+      { time: 19.5, text: "Lia ade nona makin gaga", type: "normal" },
+      { time: 23.2, text: "Bikin kaka jadi suka", type: "normal" },
+      { time: 26.8, text: "Dulu ade rambu kepang dua", type: "normal" },
+      { time: 30.5, text: "Sekarang rambu merah merah", type: "highlight" },
+      { time: 34.2, text: "Kaka lia ade tambah manis", type: "normal" },
+      { time: 37.9, text: "Pulang rantau dari mana", type: "normal" },
+      { time: 41.6, text: "Adu ade nona jang talalu", type: "normal" },
+      { time: 45.3, text: "Pasang gaya depan kaka", type: "highlight" },
+      { time: 49.0, text: "Kaka jadi jatoh e", type: "normal" },
+      
+      // Chorus
+      { time: 52.7, text: "Kaka tabola bale lia ade nona e", type: "normal" },
+      { time: 56.4, text: "Su makin manyala e", type: "normal" },
+      { time: 60.1, text: "Kaka hati susah e", type: "normal" },
+      { time: 63.8, text: "Ade bikin kaka mete", type: "normal" },
+      { time: 67.5, text: "Tidur malam bola bale", type: "normal" },
+      { time: 71.2, text: "Sejak kaka lia ade", type: "normal" },
+      { time: 74.9, text: "Aduh Tuhan ampun e", type: "highlight" },
+      
+      // Rap 1
+      { time: 78.6, text: "Ade lewat lorong depan rumah", type: "rap" },
+      { time: 80.4, text: "Kaka jadi salting sampe mood berubah", type: "rap" },
+      { time: 82.2, text: "Smangat tiba-tiba gara-gara ade nona", type: "rap" },
+      { time: 84.0, text: "Ini bidadari timur siapa yang punya", type: "rap" },
+      { time: 85.8, text: "Kaka lacak ko pu nama", type: "rap" },
+      { time: 87.6, text: "Barang itu tra pake lama", type: "rap" },
+      { time: 89.4, text: "Langsung tanya di ko pu mama", type: "rap" },
+      { time: 91.2, text: "Ternyata ade nona ko pu nama maimuna", type: "rap" },
+      { time: 93.0, text: "Eh maimuna ehh lucunya", type: "rap" },
+      { time: 94.8, text: "Kaka harap bisa satu rumah", type: "rap" },
+      { time: 96.6, text: "Kalo trima sa pu cinta", type: "rap" },
+      { time: 98.4, text: "Kaka janji kita langsung menikah", type: "rap" },
+      
+      // Verse 2
+      { time: 102.1, text: "Ondeh uda jan baitu bana", type: "normal" },
+      { time: 105.8, text: "Denai ko indaklah nan sarupo itu", type: "normal" },
+      { time: 109.5, text: "Dek hanyo takuik mancaliak uda", type: "normal" },
+      { time: 113.2, text: "Acok mabuak mabuakan", type: "highlight" },
+      { time: 116.9, text: "Dulu denai lah suko", type: "normal" },
+      { time: 120.6, text: "Mancaliak uda bakawan", type: "normal" },
+      { time: 124.3, text: "Raso raso ko ado", type: "normal" },
+      { time: 128.0, text: "Tapi denai diamkan", type: "highlight" },
+      
+      // Rap 2
+      { time: 131.7, text: "A wadaw wadaw ini ana gaga law", type: "rap" },
+      { time: 133.5, text: "Su bale jawa tamba bening aja la", type: "rap" },
+      { time: 135.3, text: "Gaya semakin beda bibir mera mera", type: "rap" },
+      { time: 137.1, text: "Ado mama mama ini siapa punya ana", type: "rap" },
+      { time: 138.9, text: "Dulu masi kici kici kici nona", type: "rap" },
+      { time: 140.7, text: "Sekarang bale jawa makin cantik nona", type: "rap" },
+      { time: 142.5, text: "Ko perfek sekali asli bidadari", type: "rap" },
+      { time: 144.3, text: "Jatuh dari langit", type: "rap" },
+      
+      // Bridge
+      { time: 146.1, text: "Kalo jadi dengan ade", type: "normal" },
+      { time: 149.8, text: "Kaka pasti stop bamabo to", type: "normal" },
+      { time: 153.5, text: "Su pasti kaka ni ade pu jodoh", type: "normal" },
+      { time: 157.2, text: "Sumpa ni jao sodho iwa mbodho", type: "highlight" },
+      
+      // Final Chorus
+      { time: 160.9, text: "Lia ade nona makin gaga", type: "normal" },
+      { time: 164.6, text: "Bikin kaka jadi suka", type: "normal" },
+      { time: 168.3, text: "Dulu ade rambu kepang dua", type: "normal" },
+      { time: 172.0, text: "Sekarang rambu merah merah", type: "highlight" },
+      { time: 175.7, text: "Kaka lia ade tambah manis", type: "normal" },
+      { time: 179.4, text: "Pulang rantau dari mana", type: "normal" },
+      { time: 183.1, text: "Adu ade nona jang talalu", type: "normal" },
+      { time: 186.8, text: "Pasang gaya depan kaka", type: "highlight" },
+      { time: 190.5, text: "Kaka jadi jatoh e", type: "normal" },
+      { time: 194.2, text: "Kaka tabola bale lia ade nona e", type: "normal" },
+      { time: 197.9, text: "Su makin manyala e", type: "normal" },
+      { time: 201.6, text: "Kaka hati susah e", type: "normal" },
+      { time: 205.3, text: "Ade bikin kaka mete", type: "normal" },
+      { time: 209.0, text: "Tidur malam bola bale", type: "normal" },
+      { time: 212.7, text: "Sejak kaka lia ade", type: "normal" },
+      { time: 216.4, text: "Aduh Tuhan ampun e", type: "highlight" },
+      { time: 220.1, text: "Ade bikin kaka mete", type: "normal" },
+      { time: 223.8, text: "Tidur malam bola bale", type: "normal" },
+      { time: 227.5, text: "Sejak kaka lia ade", type: "normal" },
+      { time: 231.2, text: "Aduh Tuhan ampun e", type: "highlight" }
     ];
 
+    // DOM elements
     const audio = document.getElementById('audio');
     const lyricsContainer = document.getElementById('lyrics');
-    const effectsContainer = document.getElementById('effects');
+    const progressBar = document.getElementById('progress');
+    const syncBackBtn = document.getElementById('sync-back');
+    const syncForwardBtn = document.getElementById('sync-forward');
+    const syncResetBtn = document.getElementById('sync-reset');
+    
+    // Sync adjustment variables
+    let globalOffset = 0;
+    let lastSyncTime = 0;
     
     // Pre-create all lyric elements
     lyrics.forEach((line, index) => {
@@ -253,78 +317,105 @@
       lyricElement.className = `lyrics-line ${line.type}`;
       lyricElement.textContent = line.text;
       lyricElement.dataset.index = index;
+      lyricElement.dataset.time = line.time;
       lyricsContainer.appendChild(lyricElement);
     });
     
-    let currentActiveIndex = -1;
+    // Calculate total duration for progress bar
+    const totalDuration = lyrics[lyrics.length - 1].time + 5;
     
-    audio.addEventListener('timeupdate', () => {
-      const currentTime = audio.currentTime;
+    // Current active line tracking
+    let currentActiveIndex = -1;
+    let isPlaying = false;
+    
+    // Audio event listeners
+    audio.addEventListener('play', () => {
+      isPlaying = true;
+      requestAnimationFrame(updateLyrics);
+    });
+    
+    audio.addEventListener('pause', () => {
+      isPlaying = false;
+    });
+    
+    audio.addEventListener('timeupdate', updateProgressBar);
+    
+    // Sync control buttons
+    syncBackBtn.addEventListener('click', () => {
+      globalOffset -= 0.5;
+      updateSyncControls();
+    });
+    
+    syncForwardBtn.addEventListener('click', () => {
+      globalOffset += 0.5;
+      updateSyncControls();
+    });
+    
+    syncResetBtn.addEventListener('click', () => {
+      globalOffset = 0;
+      updateSyncControls();
+    });
+    
+    function updateSyncControls() {
+      lastSyncTime = audio.currentTime;
+      syncResetBtn.classList.toggle('active', globalOffset !== 0);
+      syncBackBtn.textContent = `← ${0.5 + Math.abs(globalOffset)/2}s`;
+      syncForwardBtn.textContent = `→ ${0.5 + Math.abs(globalOffset)/2}s`;
+    }
+    
+    function updateProgressBar() {
+      const progress = (audio.currentTime / totalDuration) * 100;
+      progressBar.style.width = `${progress}%`;
+    }
+    
+    function getCurrentTime() {
+      return audio.currentTime + globalOffset;
+    }
+    
+    function updateLyrics() {
+      if (!isPlaying) return;
       
-      // Find the current lyric to display
-      let activeIndex = -1;
-      for (let i = 0; i < lyrics.length; i++) {
+      const currentTime = getCurrentTime();
+      
+      // Find the current active line
+      let newActiveIndex = -1;
+      for (let i = lyrics.length - 1; i >= 0; i--) {
         if (currentTime >= lyrics[i].time) {
-          activeIndex = i;
-        } else {
+          newActiveIndex = i;
           break;
         }
       }
       
-      // Update display if the active lyric has changed
-      if (activeIndex !== currentActiveIndex) {
-        // Remove active class from all
-        document.querySelectorAll('.lyrics-line').forEach(el => {
-          el.classList.remove('active');
+      // Update display if active line changed
+      if (newActiveIndex !== currentActiveIndex) {
+        // Update all line states
+        document.querySelectorAll('.lyrics-line').forEach((line, index) => {
+          line.classList.remove('active', 'past');
+          
+          if (index === newActiveIndex) {
+            line.classList.add('active');
+            
+            // Auto-scroll to center the active line
+            const container = document.querySelector('.lyrics-container');
+            const scroller = document.querySelector('.lyrics-scroller');
+            const lineTop = line.offsetTop;
+            const containerHeight = container.offsetHeight;
+            const scrollTo = lineTop - (containerHeight / 2) + (line.offsetHeight / 2);
+            
+            scroller.style.transform = `translateY(-${scrollTo}px)`;
+          } else if (index < newActiveIndex) {
+            line.classList.add('past');
+          }
         });
         
-        // Add active class to current
-        if (activeIndex >= 0) {
-          const currentLyric = document.querySelector(`.lyrics-line[data-index="${activeIndex}"]`);
-          currentLyric.classList.add('active');
-          
-          // Center the active lyric
-          currentLyric.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          
-          // Create visual effect
-          if (lyrics[activeIndex].type === 'highlight' || lyrics[activeIndex].type === 'rap') {
-            createVisualEffect();
-          }
-        }
-        
-        currentActiveIndex = activeIndex;
+        currentActiveIndex = newActiveIndex;
       }
-    });
-    
-    function createVisualEffect() {
-      const circle = document.createElement('div');
-      circle.className = 'effect-circle';
       
-      // Random position
-      const x = Math.random() * 100;
-      const y = Math.random() * 100;
-      const size = 100 + Math.random() * 200;
-      
-      circle.style.width = `${size}px`;
-      circle.style.height = `${size}px`;
-      circle.style.left = `${x}%`;
-      circle.style.top = `${y}%`;
-      circle.style.animationDuration = `${5 + Math.random() * 10}s`;
-      
-      effectsContainer.appendChild(circle);
-      
-      // Remove after animation completes
-      setTimeout(() => {
-        circle.remove();
-      }, 15000);
+      requestAnimationFrame(updateLyrics);
     }
     
-    // Create initial background effects
-    for (let i = 0; i < 5; i++) {
-      setTimeout(() => {
-        createVisualEffect();
-      }, i * 2000);
-    }
+    // Initialize
+    updateSyncControls();
   </script>
 </body>
 </html>
