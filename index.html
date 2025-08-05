@@ -3,11 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tabola Bale - AI Synced Lyrics</title>
+  <title>Tabola Bale - Fixed Lyrics Player</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.7/dist/speech-commands.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/web-audio-beat-detector@7.0.0/dist/web-audio-beat-detector.min.js"></script>
   <style>
     :root {
       --primary: #ff4d4d;
@@ -86,9 +83,6 @@
       cursor: pointer;
       font-size: 0.9rem;
       transition: all 0.3s;
-      display: flex;
-      align-items: center;
-      gap: 5px;
     }
     
     .control-btn:hover {
@@ -167,16 +161,6 @@
       transition: width 0.1s linear;
     }
     
-    .vocal-indicator {
-      position: absolute;
-      top: -3px;
-      height: 5px;
-      width: 3px;
-      background: white;
-      z-index: 101;
-      transition: left 0.1s linear;
-    }
-    
     .status-panel {
       position: fixed;
       bottom: 10px;
@@ -186,54 +170,19 @@
       border-radius: 5px;
       font-size: 0.8rem;
       color: #ccc;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
     }
     
-    .status-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-    
-    .status-dot.loading {
-      background: #ffcc00;
-      box-shadow: 0 0 3px #ffcc00;
-    }
-    
-    .status-dot.active {
-      background: #0f0;
-      box-shadow: 0 0 3px #0f0;
-    }
-    
-    .status-dot.error {
-      background: #f00;
-      box-shadow: 0 0 3px #f00;
-    }
-    
-    .loading-bar {
+    .error-message {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 3px;
-      background: rgba(255,255,255,0.1);
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,77,77,0.9);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
       z-index: 1000;
-      transition: opacity 0.3s;
-    }
-    
-    .loading-progress {
-      height: 100%;
-      background: var(--primary);
-      width: 0%;
-      transition: width 0.3s ease;
+      display: none;
     }
     
     @media (max-width: 768px) {
@@ -253,27 +202,11 @@
       .lyrics-line.rap {
         font-size: 1.4rem;
       }
-      
-      .control-panel {
-        gap: 8px;
-      }
-      
-      .control-btn {
-        padding: 6px 12px;
-        font-size: 0.8rem;
-      }
-      
-      .status-panel {
-        font-size: 0.7rem;
-        padding: 5px 8px;
-      }
     }
   </style>
 </head>
 <body>
-  <div class="loading-bar">
-    <div class="loading-progress" id="loading-progress"></div>
-  </div>
+  <div class="error-message" id="error-message"></div>
 
   <header>
     <h1>Tabola Bale</h1>
@@ -284,18 +217,9 @@
         Your browser does not support the audio element.
       </audio>
       <div class="control-panel">
-        <button class="control-btn" id="sync-back">
-          ← 0.1s
-        </button>
-        <button class="control-btn" id="sync-forward">
-          → 0.1s
-        </button>
-        <button class="control-btn" id="sync-reset">
-          Reset Sync
-        </button>
-        <button class="control-btn" id="ai-toggle">
-          AI Mode
-        </button>
+        <button class="control-btn" id="sync-back">← 0.1s</button>
+        <button class="control-btn" id="sync-forward">→ 0.1s</button>
+        <button class="control-btn" id="sync-reset">Reset Sync</button>
       </div>
     </div>
   </header>
@@ -308,455 +232,222 @@
   
   <div class="progress-container">
     <div class="progress" id="progress"></div>
-    <div class="vocal-indicator" id="vocal-indicator"></div>
   </div>
 
-  <div class="status-panel" id="status-panel">
-    <div class="status-item">
-      <div class="status-dot loading" id="ai-status-dot"></div>
-      <span id="ai-status-text">Loading AI Model...</span>
-    </div>
-    <div class="status-item">
-      <div class="status-dot" id="bpm-status-dot"></div>
-      <span id="bpm-status-text">BPM: --</span>
-    </div>
-    <div class="status-item">
-      <div class="status-dot" id="vocal-status-dot"></div>
-      <span id="vocal-status-text">Vocals: --</span>
-    </div>
+  <div class="status-panel">
+    <div id="status-text">Status: Ready</div>
+    <div id="time-display">0:00 / 0:00</div>
   </div>
 
   <script>
-    // COMPLETE LYRICS WITH PRECISE TIMING
+    // COMPLETE LYRICS DATA
     const lyrics = [
       // Intro
-      { time: 0.0, text: "", type: "hidden", vocalStart: 2.1, aiConfidence: 0.95 },
-      { time: 2.1, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 2.1, aiConfidence: 0.98 },
-      { time: 5.8, text: "Su makin manyala e", type: "normal", vocalStart: 5.8, aiConfidence: 0.97 },
-      { time: 9.5, text: "Kaka hati susah e", type: "normal", vocalStart: 9.5, aiConfidence: 0.96 },
-      { time: 13.2, text: "Dulu denai la suko mancaliak uda bakawan", type: "normal", vocalStart: 13.2, aiConfidence: 0.94 },
-      { time: 17.0, text: "Raso-raso ko ado, tapi denai diamkan (hei!)", type: "highlight", vocalStart: 17.0, aiConfidence: 0.99 },
+      { time: 0.0, text: "", type: "hidden", vocalStart: 2.1 },
+      { time: 2.1, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 2.1 },
+      { time: 5.8, text: "Su makin manyala e", type: "normal", vocalStart: 5.8 },
+      { time: 9.5, text: "Kaka hati susah e", type: "normal", vocalStart: 9.5 },
+      { time: 13.2, text: "Dulu denai la suko mancaliak uda bakawan", type: "normal", vocalStart: 13.2 },
+      { time: 17.0, text: "Raso-raso ko ado, tapi denai diamkan (hei!)", type: "highlight", vocalStart: 17.0 },
       
       // Verse 1
-      { time: 21.5, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 21.7, aiConfidence: 0.93 },
-      { time: 25.2, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 25.4, aiConfidence: 0.92 },
-      { time: 28.8, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 29.0, aiConfidence: 0.91 },
-      { time: 32.5, text: "Sekarang rambu merah merah", type: "highlight", vocalStart: 32.7, aiConfidence: 0.98 },
-      { time: 36.2, text: "Kaka lia ade tambah manis", type: "normal", vocalStart: 36.4, aiConfidence: 0.91 },
-      { time: 39.9, text: "Pulang rantau dari mana", type: "normal", vocalStart: 40.1, aiConfidence: 0.90 },
-      { time: 43.6, text: "Adu ade nona jang talalu", type: "normal", vocalStart: 43.8, aiConfidence: 0.89 },
-      { time: 47.3, text: "Pasang gaya depan kaka", type: "highlight", vocalStart: 47.5, aiConfidence: 0.97 },
-      { time: 51.0, text: "Kaka jadi jatoh e", type: "normal", vocalStart: 51.2, aiConfidence: 0.96 },
+      { time: 21.5, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 21.7 },
+      { time: 25.2, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 25.4 },
+      { time: 28.8, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 29.0 },
+      { time: 32.5, text: "Sekarang rambu merah merah", type: "highlight", vocalStart: 32.7 },
+      { time: 36.2, text: "Kaka lia ade tambah manis", type: "normal", vocalStart: 36.4 },
+      { time: 39.9, text: "Pulang rantau dari mana", type: "normal", vocalStart: 40.1 },
+      { time: 43.6, text: "Adu ade nona jang talalu", type: "normal", vocalStart: 43.8 },
+      { time: 47.3, text: "Pasang gaya depan kaka", type: "highlight", vocalStart: 47.5 },
+      { time: 51.0, text: "Kaka jadi jatoh e", type: "normal", vocalStart: 51.2 },
       
       // Chorus
-      { time: 54.7, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 54.9, aiConfidence: 0.95 },
-      { time: 58.4, text: "Su makin manyala e", type: "normal", vocalStart: 58.6, aiConfidence: 0.94 },
-      { time: 62.1, text: "Kaka hati susah e", type: "normal", vocalStart: 62.3, aiConfidence: 0.93 },
-      { time: 65.8, text: "Ade bikin kaka mete", type: "normal", vocalStart: 66.0, aiConfidence: 0.92 },
-      { time: 69.5, text: "Tidur malam bola bale", type: "normal", vocalStart: 69.7, aiConfidence: 0.91 },
-      { time: 73.2, text: "Sejak kaka lia ade", type: "normal", vocalStart: 73.4, aiConfidence: 0.90 },
-      { time: 76.9, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 77.1, aiConfidence: 0.99 },
+      { time: 54.7, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 54.9 },
+      { time: 58.4, text: "Su makin manyala e", type: "normal", vocalStart: 58.6 },
+      { time: 62.1, text: "Kaka hati susah e", type: "normal", vocalStart: 62.3 },
+      { time: 65.8, text: "Ade bikin kaka mete", type: "normal", vocalStart: 66.0 },
+      { time: 69.5, text: "Tidur malam bola bale", type: "normal", vocalStart: 69.7 },
+      { time: 73.2, text: "Sejak kaka lia ade", type: "normal", vocalStart: 73.4 },
+      { time: 76.9, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 77.1 },
       
       // Rap 1
-      { time: 80.6, text: "Ade lewat lorong depan rumah", type: "rap", vocalStart: 80.6, aiConfidence: 0.98 },
-      { time: 82.4, text: "Kaka jadi salting sampe mood berubah", type: "rap", vocalStart: 82.4, aiConfidence: 0.97 },
-      { time: 84.2, text: "Smangat tiba-tiba gara-gara ade nona", type: "rap", vocalStart: 84.2, aiConfidence: 0.96 },
-      { time: 86.0, text: "Ini bidadari timur siapa yang punya", type: "rap", vocalStart: 86.0, aiConfidence: 0.95 },
-      { time: 87.8, text: "Kaka lacak ko pu nama", type: "rap", vocalStart: 87.8, aiConfidence: 0.94 },
-      { time: 89.6, text: "Barang itu tra pake lama", type: "rap", vocalStart: 89.6, aiConfidence: 0.93 },
-      { time: 91.4, text: "Langsung tanya di ko pu mama", type: "rap", vocalStart: 91.4, aiConfidence: 0.92 },
-      { time: 93.2, text: "Ternyata ade nona ko pu nama maimuna", type: "rap", vocalStart: 93.2, aiConfidence: 0.99 },
-      { time: 95.0, text: "Eh maimuna ehh lucunya", type: "rap", vocalStart: 95.0, aiConfidence: 0.98 },
-      { time: 96.8, text: "Kaka harap bisa satu rumah", type: "rap", vocalStart: 96.8, aiConfidence: 0.97 },
-      { time: 98.6, text: "Kalo trima sa pu cinta", type: "rap", vocalStart: 98.6, aiConfidence: 0.96 },
-      { time: 100.4, text: "Kaka janji kita langsung menikah", type: "rap", vocalStart: 100.4, aiConfidence: 0.95 },
+      { time: 80.6, text: "Ade lewat lorong depan rumah", type: "rap", vocalStart: 80.6 },
+      { time: 82.4, text: "Kaka jadi salting sampe mood berubah", type: "rap", vocalStart: 82.4 },
+      { time: 84.2, text: "Smangat tiba-tiba gara-gara ade nona", type: "rap", vocalStart: 84.2 },
+      { time: 86.0, text: "Ini bidadari timur siapa yang punya", type: "rap", vocalStart: 86.0 },
+      { time: 87.8, text: "Kaka lacak ko pu nama", type: "rap", vocalStart: 87.8 },
+      { time: 89.6, text: "Barang itu tra pake lama", type: "rap", vocalStart: 89.6 },
+      { time: 91.4, text: "Langsung tanya di ko pu mama", type: "rap", vocalStart: 91.4 },
+      { time: 93.2, text: "Ternyata ade nona ko pu nama maimuna", type: "rap", vocalStart: 93.2 },
+      { time: 95.0, text: "Eh maimuna ehh lucunya", type: "rap", vocalStart: 95.0 },
+      { time: 96.8, text: "Kaka harap bisa satu rumah", type: "rap", vocalStart: 96.8 },
+      { time: 98.6, text: "Kalo trima sa pu cinta", type: "rap", vocalStart: 98.6 },
+      { time: 100.4, text: "Kaka janji kita langsung menikah", type: "rap", vocalStart: 100.4 },
       
       // Verse 2
-      { time: 104.1, text: "Ondeh uda jan baitu bana", type: "normal", vocalStart: 104.3, aiConfidence: 0.94 },
-      { time: 107.8, text: "Denai ko indaklah nan sarupo itu", type: "normal", vocalStart: 108.0, aiConfidence: 0.93 },
-      { time: 111.5, text: "Dek hanyo takuik mancaliak uda", type: "normal", vocalStart: 111.7, aiConfidence: 0.92 },
-      { time: 115.2, text: "Acok mabuak mabuakan", type: "highlight", vocalStart: 115.4, aiConfidence: 0.99 },
-      { time: 118.9, text: "Dulu denai lah suko", type: "normal", vocalStart: 119.1, aiConfidence: 0.91 },
-      { time: 122.6, text: "Mancaliak uda bakawan", type: "normal", vocalStart: 122.8, aiConfidence: 0.90 },
-      { time: 126.3, text: "Raso raso ko ado", type: "normal", vocalStart: 126.5, aiConfidence: 0.89 },
-      { time: 130.0, text: "Tapi denai diamkan", type: "highlight", vocalStart: 130.2, aiConfidence: 0.98 },
+      { time: 104.1, text: "Ondeh uda jan baitu bana", type: "normal", vocalStart: 104.3 },
+      { time: 107.8, text: "Denai ko indaklah nan sarupo itu", type: "normal", vocalStart: 108.0 },
+      { time: 111.5, text: "Dek hanyo takuik mancaliak uda", type: "normal", vocalStart: 111.7 },
+      { time: 115.2, text: "Acok mabuak mabuakan", type: "highlight", vocalStart: 115.4 },
+      { time: 118.9, text: "Dulu denai lah suko", type: "normal", vocalStart: 119.1 },
+      { time: 122.6, text: "Mancaliak uda bakawan", type: "normal", vocalStart: 122.8 },
+      { time: 126.3, text: "Raso raso ko ado", type: "normal", vocalStart: 126.5 },
+      { time: 130.0, text: "Tapi denai diamkan", type: "highlight", vocalStart: 130.2 },
       
       // Rap 2
-      { time: 133.7, text: "A wadaw wadaw ini ana gaga law", type: "rap", vocalStart: 133.7, aiConfidence: 0.97 },
-      { time: 135.5, text: "Su bale jawa tamba bening aja la", type: "rap", vocalStart: 135.5, aiConfidence: 0.96 },
-      { time: 137.3, text: "Gaya semakin beda bibir mera mera", type: "rap", vocalStart: 137.3, aiConfidence: 0.95 },
-      { time: 139.1, text: "Ado mama mama ini siapa punya ana", type: "rap", vocalStart: 139.1, aiConfidence: 0.94 },
-      { time: 140.9, text: "Dulu masi kici kici kici nona", type: "rap", vocalStart: 140.9, aiConfidence: 0.93 },
-      { time: 142.7, text: "Sekarang bale jawa makin cantik nona", type: "rap", vocalStart: 142.7, aiConfidence: 0.92 },
-      { time: 144.5, text: "Ko perfek sekali asli bidadari", type: "rap", vocalStart: 144.5, aiConfidence: 0.91 },
-      { time: 146.3, text: "Jatuh dari langit", type: "rap", vocalStart: 146.3, aiConfidence: 0.90 },
+      { time: 133.7, text: "A wadaw wadaw ini ana gaga law", type: "rap", vocalStart: 133.7 },
+      { time: 135.5, text: "Su bale jawa tamba bening aja la", type: "rap", vocalStart: 135.5 },
+      { time: 137.3, text: "Gaya semakin beda bibir mera mera", type: "rap", vocalStart: 137.3 },
+      { time: 139.1, text: "Ado mama mama ini siapa punya ana", type: "rap", vocalStart: 139.1 },
+      { time: 140.9, text: "Dulu masi kici kici kici nona", type: "rap", vocalStart: 140.9 },
+      { time: 142.7, text: "Sekarang bale jawa makin cantik nona", type: "rap", vocalStart: 142.7 },
+      { time: 144.5, text: "Ko perfek sekali asli bidadari", type: "rap", vocalStart: 144.5 },
+      { time: 146.3, text: "Jatuh dari langit", type: "rap", vocalStart: 146.3 },
       
       // Bridge
-      { time: 148.1, text: "Kalo jadi dengan ade", type: "normal", vocalStart: 148.3, aiConfidence: 0.89 },
-      { time: 151.8, text: "Kaka pasti stop bamabo to", type: "normal", vocalStart: 152.0, aiConfidence: 0.88 },
-      { time: 155.5, text: "Su pasti kaka ni ade pu jodoh", type: "normal", vocalStart: 155.7, aiConfidence: 0.87 },
-      { time: 159.2, text: "Sumpa ni jao sodho iwa mbodho", type: "highlight", vocalStart: 159.4, aiConfidence: 0.99 },
+      { time: 148.1, text: "Kalo jadi dengan ade", type: "normal", vocalStart: 148.3 },
+      { time: 151.8, text: "Kaka pasti stop bamabo to", type: "normal", vocalStart: 152.0 },
+      { time: 155.5, text: "Su pasti kaka ni ade pu jodoh", type: "normal", vocalStart: 155.7 },
+      { time: 159.2, text: "Sumpa ni jao sodho iwa mbodho", type: "highlight", vocalStart: 159.4 },
       
       // Final Chorus
-      { time: 162.9, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 163.1, aiConfidence: 0.98 },
-      { time: 166.6, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 166.8, aiConfidence: 0.97 },
-      { time: 170.3, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 170.5, aiConfidence: 0.96 },
-      { time: 174.0, text: "Sekarang rambu merah merah", type: "highlight", vocalStart: 174.2, aiConfidence: 0.99 },
-      { time: 177.7, text: "Kaka lia ade tambah manis", type: "normal", vocalStart: 177.9, aiConfidence: 0.95 },
-      { time: 181.4, text: "Pulang rantau dari mana", type: "normal", vocalStart: 181.6, aiConfidence: 0.94 },
-      { time: 185.1, text: "Adu ade nona jang talalu", type: "normal", vocalStart: 185.3, aiConfidence: 0.93 },
-      { time: 188.8, text: "Pasang gaya depan kaka", type: "highlight", vocalStart: 189.0, aiConfidence: 0.98 },
-      { time: 192.5, text: "Kaka jadi jatoh e", type: "normal", vocalStart: 192.7, aiConfidence: 0.97 },
-      { time: 196.2, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 196.4, aiConfidence: 0.96 },
-      { time: 199.9, text: "Su makin manyala e", type: "normal", vocalStart: 200.1, aiConfidence: 0.95 },
-      { time: 203.6, text: "Kaka hati susah e", type: "normal", vocalStart: 203.8, aiConfidence: 0.94 },
-      { time: 207.3, text: "Ade bikin kaka mete", type: "normal", vocalStart: 207.5, aiConfidence: 0.93 },
-      { time: 211.0, text: "Tidur malam bola bale", type: "normal", vocalStart: 211.2, aiConfidence: 0.92 },
-      { time: 214.7, text: "Sejak kaka lia ade", type: "normal", vocalStart: 214.9, aiConfidence: 0.91 },
-      { time: 218.4, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 218.6, aiConfidence: 0.99 },
-      { time: 222.1, text: "Ade bikin kaka mete", type: "normal", vocalStart: 222.3, aiConfidence: 0.97 },
-      { time: 225.8, text: "Tidur malam bola bale", type: "normal", vocalStart: 226.0, aiConfidence: 0.96 },
-      { time: 229.5, text: "Sejak kaka lia ade", type: "normal", vocalStart: 229.7, aiConfidence: 0.95 },
-      { time: 233.2, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 233.4, aiConfidence: 0.99 }
+      { time: 162.9, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 163.1 },
+      { time: 166.6, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 166.8 },
+      { time: 170.3, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 170.5 },
+      { time: 174.0, text: "Sekarang rambu merah merah", type: "highlight", vocalStart: 174.2 },
+      { time: 177.7, text: "Kaka lia ade tambah manis", type: "normal", vocalStart: 177.9 },
+      { time: 181.4, text: "Pulang rantau dari mana", type: "normal", vocalStart: 181.6 },
+      { time: 185.1, text: "Adu ade nona jang talalu", type: "normal", vocalStart: 185.3 },
+      { time: 188.8, text: "Pasang gaya depan kaka", type: "highlight", vocalStart: 189.0 },
+      { time: 192.5, text: "Kaka jadi jatoh e", type: "normal", vocalStart: 192.7 },
+      { time: 196.2, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 196.4 },
+      { time: 199.9, text: "Su makin manyala e", type: "normal", vocalStart: 200.1 },
+      { time: 203.6, text: "Kaka hati susah e", type: "normal", vocalStart: 203.8 },
+      { time: 207.3, text: "Ade bikin kaka mete", type: "normal", vocalStart: 207.5 },
+      { time: 211.0, text: "Tidur malam bola bale", type: "normal", vocalStart: 211.2 },
+      { time: 214.7, text: "Sejak kaka lia ade", type: "normal", vocalStart: 214.9 },
+      { time: 218.4, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 218.6 },
+      { time: 222.1, text: "Ade bikin kaka mete", type: "normal", vocalStart: 222.3 },
+      { time: 225.8, text: "Tidur malam bola bale", type: "normal", vocalStart: 226.0 },
+      { time: 229.5, text: "Sejak kaka lia ade", type: "normal", vocalStart: 229.7 },
+      { time: 233.2, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 233.4 }
     ];
 
     // DOM elements
     const audio = document.getElementById('audio');
     const lyricsContainer = document.getElementById('lyrics');
     const progressBar = document.getElementById('progress');
-    const vocalIndicator = document.getElementById('vocal-indicator');
+    const statusText = document.getElementById('status-text');
+    const timeDisplay = document.getElementById('time-display');
+    const errorMessage = document.getElementById('error-message');
     const syncBackBtn = document.getElementById('sync-back');
     const syncForwardBtn = document.getElementById('sync-forward');
     const syncResetBtn = document.getElementById('sync-reset');
-    const aiToggleBtn = document.getElementById('ai-toggle');
-    const aiStatusDot = document.getElementById('ai-status-dot');
-    const aiStatusText = document.getElementById('ai-status-text');
-    const bpmStatusDot = document.getElementById('bpm-status-dot');
-    const bpmStatusText = document.getElementById('bpm-status-text');
-    const vocalStatusDot = document.getElementById('vocal-status-dot');
-    const vocalStatusText = document.getElementById('vocal-status-text');
-    const loadingProgress = document.getElementById('loading-progress');
     
-    // Audio analysis variables
-    let audioContext;
-    let sourceNode;
-    let analyser;
-    let beatDetector;
-    let isAnalyzing = false;
-    let currentBPM = 0;
-    let lastBeatTime = 0;
-    let lastVocalTime = 0;
-    let isVocalActive = false;
-    
-    // AI Model variables
-    let recognizer;
-    let isAIActive = true;
-    let isModelLoaded = false;
-    
-    // Sync adjustment variables
+    // Audio state variables
+    let isAudioReady = false;
+    let duration = 0;
+    let currentActiveIndex = -1;
     let globalOffset = 0;
     let lastSyncTime = 0;
     
-    // Current active line tracking
-    let currentActiveIndex = -1;
-    let isPlaying = false;
-    let animationFrameId;
-    
-    // Load AI model with better error handling
-    async function loadAIModel() {
-      updateAIStatus('Loading AI model...', 'loading');
-      updateLoadingProgress(30);
-      
-      try {
-        // First try to load TensorFlow.js backend
-        await tf.ready();
-        
-        // Then load speech commands model
-        recognizer = speechCommands.create('BROWSER_FFT', null, 
-          'https://storage.googleapis.com/tfjs-models/tfjs/speech-commands/v0.5/browser_fft/18w');
-        
-        await recognizer.ensureModelLoaded();
-        
-        updateAIStatus('Analyzing audio...', 'loading');
-        updateLoadingProgress(70);
-        
-        // Initialize Web Audio API
-        initAudioAnalysis();
-        
-        isModelLoaded = true;
-        updateAIStatus('AI Ready', 'active');
-        updateLoadingProgress(100);
-        
-        setTimeout(() => {
-          document.querySelector('.loading-bar').style.opacity = '0';
-          setTimeout(() => {
-            document.querySelector('.loading-bar').style.display = 'none';
-          }, 300);
-        }, 500);
-      } catch (error) {
-        console.error('AI Model loading error:', error);
-        updateAIStatus('AI Failed - Using Enhanced Mode', 'error');
-        isAIActive = false;
-        aiToggleBtn.classList.remove('active');
-        
-        // Still initialize audio analysis for fallback
-        initAudioAnalysis();
-      }
+    // Format time (seconds to MM:SS)
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     }
     
-    // Initialize audio analysis with BPM detection
-    function initAudioAnalysis() {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      sourceNode = audioContext.createMediaElementSource(audio);
-      
-      // Create analyser for fallback vocal detection
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      sourceNode.connect(analyser);
-      
-      // Initialize beat detector
-      beatDetector = new WebAudioBeatDetector(audioContext);
-      
-      // Setup script processor for real-time analysis
-      const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-      scriptProcessor.onaudioprocess = function() {
-        // Fallback vocal detection when AI is not available
-        if (!isAIActive || !isModelLoaded) {
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
-          analyser.getByteFrequencyData(dataArray);
-          
-          let sum = 0;
-          for (let i = 40; i < 150; i++) { // Focus on vocal range
-            sum += dataArray[i];
-          }
-          
-          const average = sum / 110 / 255;
-          isVocalActive = average > 0.35;
-          
-          if (isVocalActive) {
-            lastVocalTime = audio.currentTime;
-          }
+    // Show error message
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorMessage.style.display = 'block';
+      setTimeout(() => {
+        errorMessage.style.display = 'none';
+      }, 5000);
+    }
+    
+    // Check audio availability
+    function checkAudio() {
+      return new Promise((resolve) => {
+        if (audio.readyState > 0) {
+          duration = audio.duration;
+          isAudioReady = true;
+          resolve(true);
+          return;
         }
-      };
-      
-      analyser.connect(scriptProcessor);
-      scriptProcessor.connect(audioContext.destination);
-      sourceNode.connect(audioContext.destination);
-      
-      isAnalyzing = true;
-      updateBPMStatus('Detecting BPM...', 'loading');
-      
-      // Detect BPM when enough audio has played
-      audio.addEventListener('timeupdate', async function onTimeUpdate() {
-        if (audio.currentTime > 10 && currentBPM === 0) {
-          try {
-            const { bpm } = await beatDetector.detectBpm(audio);
-            currentBPM = Math.round(bpm);
-            updateBPMStatus(`BPM: ${currentBPM}`, 'active');
-          } catch (error) {
-            console.error('BPM detection failed:', error);
-            updateBPMStatus('BPM: Unknown', 'error');
-          }
-          audio.removeEventListener('timeupdate', onTimeUpdate);
-        }
+        
+        const onLoadedMetadata = () => {
+          duration = audio.duration;
+          isAudioReady = true;
+          audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+          resolve(true);
+        };
+        
+        const onError = () => {
+          showError("Error: Audio file not found. Please check the file name.");
+          audio.removeEventListener('error', onError);
+          resolve(false);
+        };
+        
+        audio.addEventListener('loadedmetadata', onLoadedMetadata);
+        audio.addEventListener('error', onError);
       });
     }
     
-    // Detect vocals using AI model with better error handling
-    async function detectVocalsWithAI() {
-      if (!isAIActive || !recognizer) return false;
-      
-      try {
-        // Check if model is listening, if not start listening
-        if (!recognizer.isListening()) {
-          await recognizer.listen(result => {
-            if (result.scores) {
-              const vocalScore = result.scores[1]; // Assuming index 1 is vocal
-              isVocalActive = vocalScore > 0.85;
-              
-              if (isVocalActive) {
-                lastVocalTime = audio.currentTime;
-              }
-              
-              updateVocalStatus(isVocalActive ? 'Vocals: Active' : 'Vocals: Inactive', 
-                              isVocalActive ? 'active' : 'inactive');
-            }
-          }, {
-            includeSpectrogram: true,
-            probabilityThreshold: 0.85,
-            overlapFactor: 0.5,
-            invokeCallbackOnNoiseAndUnknown: true
-          });
-        }
+    // Initialize lyrics
+    function initLyrics() {
+      lyrics.forEach((line, index) => {
+        if (line.type === "hidden") return;
         
-        return isVocalActive;
-      } catch (error) {
-        console.error('AI vocal detection error:', error);
-        updateAIStatus('AI Error - Using Fallback', 'error');
-        isAIActive = false;
-        return false;
-      }
+        const lyricElement = document.createElement('div');
+        lyricElement.className = `lyrics-line ${line.type}`;
+        lyricElement.textContent = line.text;
+        lyricElement.dataset.index = index;
+        lyricsContainer.appendChild(lyricElement);
+      });
+      
+      // Update time display
+      timeDisplay.textContent = `0:00 / ${formatTime(duration)}`;
     }
     
-    // Status update functions
-    function updateAIStatus(text, state) {
-      aiStatusText.textContent = text;
-      aiStatusDot.className = 'status-dot';
-      
-      if (state === 'loading') {
-        aiStatusDot.classList.add('loading');
-      } else if (state === 'active') {
-        aiStatusDot.classList.add('active');
-      } else if (state === 'error') {
-        aiStatusDot.classList.add('error');
-      }
-    }
-    
-    function updateBPMStatus(text, state) {
-      bpmStatusText.textContent = text;
-      bpmStatusDot.className = 'status-dot';
-      
-      if (state === 'loading') {
-        bpmStatusDot.classList.add('loading');
-      } else if (state === 'active') {
-        bpmStatusDot.classList.add('active');
-      } else if (state === 'error') {
-        bpmStatusDot.classList.add('error');
-      }
-    }
-    
-    function updateVocalStatus(text, state) {
-      vocalStatusText.textContent = text;
-      vocalStatusDot.className = 'status-dot';
-      
-      if (state === 'active') {
-        vocalStatusDot.classList.add('active');
-      } else if (state === 'inactive') {
-        vocalStatusDot.classList.add('error');
-      }
-    }
-    
-    function updateLoadingProgress(percent) {
-      loadingProgress.style.width = `${percent}%`;
-    }
-    
-    // Audio event listeners
-    audio.addEventListener('play', async () => {
-      if (!audioContext) {
-        await loadAIModel();
-      } else if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-      
-      isPlaying = true;
-      updateLyrics();
-    });
-    
-    audio.addEventListener('pause', () => {
-      isPlaying = false;
-      cancelAnimationFrame(animationFrameId);
-      
-      if (recognizer && recognizer.isListening()) {
-        recognizer.stopListening();
-      }
-    });
-    
-    audio.addEventListener('timeupdate', updateProgressBar);
-    
-    // Control buttons
-    syncBackBtn.addEventListener('click', () => {
-      globalOffset -= 0.1;
-      updateSyncControls();
-    });
-    
-    syncForwardBtn.addEventListener('click', () => {
-      globalOffset += 0.1;
-      updateSyncControls();
-    });
-    
-    syncResetBtn.addEventListener('click', () => {
-      globalOffset = 0;
-      updateSyncControls();
-    });
-    
-    aiToggleBtn.addEventListener('click', () => {
-      isAIActive = !isAIActive;
-      aiToggleBtn.classList.toggle('active', isAIActive);
-      updateAIStatus(isAIActive ? 'AI Active' : 'AI Disabled', 
-                    isAIActive ? 'active' : 'error');
-    });
-    
+    // Update sync controls
     function updateSyncControls() {
       lastSyncTime = audio.currentTime;
       syncResetBtn.classList.toggle('active', globalOffset !== 0);
     }
     
+    // Update progress bar
     function updateProgressBar() {
-      const progress = (audio.currentTime / totalDuration) * 100;
+      if (!isAudioReady) return;
+      
+      const progress = (audio.currentTime / duration) * 100;
       progressBar.style.width = `${progress}%`;
-      vocalIndicator.style.left = `${progress}%`;
+      timeDisplay.textContent = `${formatTime(audio.currentTime)} / ${formatTime(duration)}`;
     }
     
+    // Get current time with offset
     function getCurrentTime() {
       return audio.currentTime + globalOffset;
     }
     
-    // Pre-create all lyric elements
-    lyrics.forEach((line, index) => {
-      if (line.type === "hidden") return;
-      
-      const lyricElement = document.createElement('div');
-      lyricElement.className = `lyrics-line ${line.type}`;
-      lyricElement.textContent = line.text;
-      lyricElement.dataset.index = index;
-      lyricElement.dataset.time = line.time;
-      lyricElement.dataset.vocalStart = line.vocalStart || line.time;
-      lyricElement.dataset.aiConfidence = line.aiConfidence || 0.9;
-      lyricsContainer.appendChild(lyricElement);
-    });
-    
-    // Calculate total duration for progress bar
-    const totalDuration = lyrics[lyrics.length - 1].time + 5;
-    
-    async function updateLyrics() {
-      if (!isPlaying) return;
+    // Update lyrics display
+    function updateLyrics() {
+      if (!isAudioReady) return;
       
       const currentTime = getCurrentTime();
       
-      // Detect vocals using the best available method
-      if (isAIActive && isModelLoaded) {
-        await detectVocalsWithAI();
-      } else {
-        // Fallback to timing-based vocal detection
-        isVocalActive = (currentTime - lastVocalTime) < 0.3;
-        updateVocalStatus(isVocalActive ? 'Vocals: Active' : 'Vocals: Inactive', 
-                        isVocalActive ? 'active' : 'inactive');
-      }
-      
-      // Update vocal indicator
-      vocalIndicator.style.backgroundColor = isVocalActive ? '#ff4d4d' : '#ccc';
-      
-      // Find the current active line - only advance during vocal sections
+      // Find the current active line
       let newActiveIndex = -1;
       for (let i = lyrics.length - 1; i >= 0; i--) {
-        const line = lyrics[i];
-        const vocalStart = line.vocalStart || line.time;
-        
-        // Only advance if we're past the vocal start time AND either:
-        // 1. We're in a vocal section, or
-        // 2. We're very close to the expected time (for rap sections)
-        if (currentTime >= vocalStart) {
-          if (isVocalActive || 
-              (line.type === 'rap' && (currentTime - vocalStart < 0.2)) ||
-              (currentTime - vocalStart < 0.3)) {
-            newActiveIndex = i;
-            break;
-          }
+        if (currentTime >= lyrics[i].time) {
+          newActiveIndex = i;
+          break;
         }
       }
       
       // Update display if active line changed
-      if (newActiveIndex !== currentActiveIndex && newActiveIndex >= 0) {
+      if (newActiveIndex !== currentActiveIndex) {
         // Update all line states
         document.querySelectorAll('.lyrics-line').forEach((line, index) => {
           line.classList.remove('active', 'past');
@@ -779,24 +470,65 @@
         
         currentActiveIndex = newActiveIndex;
       }
-      
-      animationFrameId = requestAnimationFrame(updateLyrics);
     }
     
-    // Initialize
-    loadAIModel();
-    aiToggleBtn.classList.add('active');
-    
-    // Clean up
-    window.addEventListener('beforeunload', () => {
-      if (audioContext) {
-        audioContext.close();
-      }
-      if (recognizer && recognizer.isListening()) {
-        recognizer.stopListening();
-      }
-      cancelAnimationFrame(animationFrameId);
+    // Event listeners
+    audio.addEventListener('timeupdate', () => {
+      updateProgressBar();
+      updateLyrics();
     });
+    
+    audio.addEventListener('play', async () => {
+      statusText.textContent = "Status: Playing";
+      if (!isAudioReady) {
+        const audioReady = await checkAudio();
+        if (audioReady) {
+          initLyrics();
+        }
+      }
+    });
+    
+    audio.addEventListener('pause', () => {
+      statusText.textContent = "Status: Paused";
+    });
+    
+    audio.addEventListener('ended', () => {
+      statusText.textContent = "Status: Finished";
+    });
+    
+    audio.addEventListener('error', () => {
+      showError("Error loading audio file. Please check the file path.");
+      statusText.textContent = "Status: Error";
+    });
+    
+    // Sync control buttons
+    syncBackBtn.addEventListener('click', () => {
+      globalOffset -= 0.1;
+      updateSyncControls();
+      updateLyrics();
+    });
+    
+    syncForwardBtn.addEventListener('click', () => {
+      globalOffset += 0.1;
+      updateSyncControls();
+      updateLyrics();
+    });
+    
+    syncResetBtn.addEventListener('click', () => {
+      globalOffset = 0;
+      updateSyncControls();
+      updateLyrics();
+    });
+    
+    // Initialize
+    (async () => {
+      statusText.textContent = "Status: Loading...";
+      const audioReady = await checkAudio();
+      if (audioReady) {
+        statusText.textContent = "Status: Ready";
+        initLyrics();
+      }
+    })();
   </script>
 </body>
 </html>
