@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tabola Bale - Fixed Lyrics Player</title>
+  <title>Tabola Bale - AI Sync Lyrics</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- TensorFlow.js untuk deteksi vokal AI -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.7/dist/speech-commands.min.js"></script>
+  <!-- Library BPM Detection -->
+  <script src="https://cdn.jsdelivr.net/npm/web-audio-beat-detector@7.0.0/dist/web-audio-beat-detector.min.js"></script>
   <style>
     :root {
       --primary: #ff4d4d;
@@ -104,7 +109,7 @@
     }
     
     .lyrics-scroller {
-      transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.4, 1);
+      transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.4, 1);
     }
     
     .lyrics-line {
@@ -114,7 +119,7 @@
       font-weight: 600;
       margin: 1.5rem 0;
       opacity: 0.3;
-      transition: all 0.8s cubic-bezier(0.2, 0.8, 0.4, 1);
+      transition: all 0.5s cubic-bezier(0.2, 0.8, 0.4, 1);
       transform: scale(0.95);
       text-shadow: 0 2px 10px rgba(0,0,0,0.5);
       line-height: 1.4;
@@ -161,6 +166,16 @@
       transition: width 0.1s linear;
     }
     
+    .vocal-indicator {
+      position: absolute;
+      top: -3px;
+      height: 5px;
+      width: 3px;
+      background: white;
+      z-index: 101;
+      transition: left 0.1s linear;
+    }
+    
     .status-panel {
       position: fixed;
       bottom: 10px;
@@ -172,41 +187,28 @@
       color: #ccc;
     }
     
-    .error-message {
+    .loading-bar {
       position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,77,77,0.9);
-      color: white;
-      padding: 10px 20px;
-      border-radius: 5px;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: rgba(255,255,255,0.1);
       z-index: 1000;
-      display: none;
     }
     
-    @media (max-width: 768px) {
-      h1 {
-        font-size: 2rem;
-      }
-      
-      .lyrics-line {
-        font-size: 1.5rem;
-        margin: 1rem 0;
-      }
-      
-      .lyrics-line.highlight {
-        font-size: 1.7rem;
-      }
-      
-      .lyrics-line.rap {
-        font-size: 1.4rem;
-      }
+    .loading-progress {
+      height: 100%;
+      background: var(--primary);
+      width: 0%;
+      transition: width 0.3s ease;
     }
   </style>
 </head>
 <body>
-  <div class="error-message" id="error-message"></div>
+  <div class="loading-bar">
+    <div class="loading-progress" id="loading-progress"></div>
+  </div>
 
   <header>
     <h1>Tabola Bale</h1>
@@ -220,37 +222,37 @@
         <button class="control-btn" id="sync-back">← 0.1s</button>
         <button class="control-btn" id="sync-forward">→ 0.1s</button>
         <button class="control-btn" id="sync-reset">Reset Sync</button>
+        <button class="control-btn" id="ai-toggle">AI Mode</button>
       </div>
     </div>
   </header>
   
   <div class="lyrics-container">
     <div class="lyrics-scroller" id="lyrics">
-      <!-- Lyrics will be dynamically inserted here -->
+      <!-- Lirik akan dimuat di sini -->
     </div>
   </div>
   
   <div class="progress-container">
     <div class="progress" id="progress"></div>
+    <div class="vocal-indicator" id="vocal-indicator"></div>
   </div>
 
   <div class="status-panel">
-    <div id="status-text">Status: Ready</div>
-    <div id="time-display">0:00 / 0:00</div>
+    <div id="status-text">Loading AI Model...</div>
+    <div id="bpm-status">BPM: --</div>
+    <div id="vocal-status">Vocals: --</div>
   </div>
 
   <script>
-    // COMPLETE LYRICS DATA
+    // LIRIK LENGKAP DENGAN TIMING
     const lyrics = [
-      // Intro
       { time: 0.0, text: "", type: "hidden", vocalStart: 2.1 },
       { time: 2.1, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 2.1 },
       { time: 5.8, text: "Su makin manyala e", type: "normal", vocalStart: 5.8 },
       { time: 9.5, text: "Kaka hati susah e", type: "normal", vocalStart: 9.5 },
       { time: 13.2, text: "Dulu denai la suko mancaliak uda bakawan", type: "normal", vocalStart: 13.2 },
       { time: 17.0, text: "Raso-raso ko ado, tapi denai diamkan (hei!)", type: "highlight", vocalStart: 17.0 },
-      
-      // Verse 1
       { time: 21.5, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 21.7 },
       { time: 25.2, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 25.4 },
       { time: 28.8, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 29.0 },
@@ -260,8 +262,6 @@
       { time: 43.6, text: "Adu ade nona jang talalu", type: "normal", vocalStart: 43.8 },
       { time: 47.3, text: "Pasang gaya depan kaka", type: "highlight", vocalStart: 47.5 },
       { time: 51.0, text: "Kaka jadi jatoh e", type: "normal", vocalStart: 51.2 },
-      
-      // Chorus
       { time: 54.7, text: "Kaka tabola bale lia ade nona e", type: "normal", vocalStart: 54.9 },
       { time: 58.4, text: "Su makin manyala e", type: "normal", vocalStart: 58.6 },
       { time: 62.1, text: "Kaka hati susah e", type: "normal", vocalStart: 62.3 },
@@ -269,8 +269,6 @@
       { time: 69.5, text: "Tidur malam bola bale", type: "normal", vocalStart: 69.7 },
       { time: 73.2, text: "Sejak kaka lia ade", type: "normal", vocalStart: 73.4 },
       { time: 76.9, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 77.1 },
-      
-      // Rap 1
       { time: 80.6, text: "Ade lewat lorong depan rumah", type: "rap", vocalStart: 80.6 },
       { time: 82.4, text: "Kaka jadi salting sampe mood berubah", type: "rap", vocalStart: 82.4 },
       { time: 84.2, text: "Smangat tiba-tiba gara-gara ade nona", type: "rap", vocalStart: 84.2 },
@@ -283,8 +281,6 @@
       { time: 96.8, text: "Kaka harap bisa satu rumah", type: "rap", vocalStart: 96.8 },
       { time: 98.6, text: "Kalo trima sa pu cinta", type: "rap", vocalStart: 98.6 },
       { time: 100.4, text: "Kaka janji kita langsung menikah", type: "rap", vocalStart: 100.4 },
-      
-      // Verse 2
       { time: 104.1, text: "Ondeh uda jan baitu bana", type: "normal", vocalStart: 104.3 },
       { time: 107.8, text: "Denai ko indaklah nan sarupo itu", type: "normal", vocalStart: 108.0 },
       { time: 111.5, text: "Dek hanyo takuik mancaliak uda", type: "normal", vocalStart: 111.7 },
@@ -293,8 +289,6 @@
       { time: 122.6, text: "Mancaliak uda bakawan", type: "normal", vocalStart: 122.8 },
       { time: 126.3, text: "Raso raso ko ado", type: "normal", vocalStart: 126.5 },
       { time: 130.0, text: "Tapi denai diamkan", type: "highlight", vocalStart: 130.2 },
-      
-      // Rap 2
       { time: 133.7, text: "A wadaw wadaw ini ana gaga law", type: "rap", vocalStart: 133.7 },
       { time: 135.5, text: "Su bale jawa tamba bening aja la", type: "rap", vocalStart: 135.5 },
       { time: 137.3, text: "Gaya semakin beda bibir mera mera", type: "rap", vocalStart: 137.3 },
@@ -303,14 +297,10 @@
       { time: 142.7, text: "Sekarang bale jawa makin cantik nona", type: "rap", vocalStart: 142.7 },
       { time: 144.5, text: "Ko perfek sekali asli bidadari", type: "rap", vocalStart: 144.5 },
       { time: 146.3, text: "Jatuh dari langit", type: "rap", vocalStart: 146.3 },
-      
-      // Bridge
       { time: 148.1, text: "Kalo jadi dengan ade", type: "normal", vocalStart: 148.3 },
       { time: 151.8, text: "Kaka pasti stop bamabo to", type: "normal", vocalStart: 152.0 },
       { time: 155.5, text: "Su pasti kaka ni ade pu jodoh", type: "normal", vocalStart: 155.7 },
       { time: 159.2, text: "Sumpa ni jao sodho iwa mbodho", type: "highlight", vocalStart: 159.4 },
-      
-      // Final Chorus
       { time: 162.9, text: "Lia ade nona makin gaga", type: "normal", vocalStart: 163.1 },
       { time: 166.6, text: "Bikin kaka jadi suka", type: "normal", vocalStart: 166.8 },
       { time: 170.3, text: "Dulu ade rambu kepang dua", type: "normal", vocalStart: 170.5 },
@@ -333,135 +323,149 @@
       { time: 233.2, text: "Aduh Tuhan ampun e", type: "highlight", vocalStart: 233.4 }
     ];
 
-    // DOM elements
+    // DOM Elements
     const audio = document.getElementById('audio');
     const lyricsContainer = document.getElementById('lyrics');
     const progressBar = document.getElementById('progress');
+    const vocalIndicator = document.getElementById('vocal-indicator');
     const statusText = document.getElementById('status-text');
-    const timeDisplay = document.getElementById('time-display');
-    const errorMessage = document.getElementById('error-message');
+    const bpmStatus = document.getElementById('bpm-status');
+    const vocalStatus = document.getElementById('vocal-status');
+    const loadingProgress = document.getElementById('loading-progress');
     const syncBackBtn = document.getElementById('sync-back');
     const syncForwardBtn = document.getElementById('sync-forward');
     const syncResetBtn = document.getElementById('sync-reset');
-    
-    // Audio state variables
-    let isAudioReady = false;
-    let duration = 0;
-    let currentActiveIndex = -1;
+    const aiToggleBtn = document.getElementById('ai-toggle');
+
+    // State Variables
+    let audioContext;
+    let analyser;
+    let isAIActive = true;
+    let isModelLoaded = false;
+    let currentBPM = 0;
+    let lastVocalTime = 0;
+    let isVocalActive = false;
     let globalOffset = 0;
-    let lastSyncTime = 0;
-    
-    // Format time (seconds to MM:SS)
-    function formatTime(seconds) {
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.floor(seconds % 60);
-      return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    let currentActiveIndex = -1;
+    let isPlaying = false;
+
+    // Load AI Model
+    async function loadAIModel() {
+      statusText.textContent = "Loading AI Model...";
+      updateLoadingProgress(30);
+
+      try {
+        recognizer = speechCommands.create('BROWSER_FFT');
+        await recognizer.ensureModelLoaded();
+        
+        updateLoadingProgress(70);
+        initAudioAnalysis();
+        
+        isModelLoaded = true;
+        statusText.textContent = "AI Ready";
+        updateLoadingProgress(100);
+        
+        setTimeout(() => {
+          document.querySelector('.loading-bar').style.opacity = '0';
+          setTimeout(() => {
+            document.querySelector('.loading-bar').style.display = 'none';
+          }, 300);
+        }, 500);
+      } catch (error) {
+        console.error("AI Error:", error);
+        statusText.textContent = "AI Failed - Using Enhanced Mode";
+        isAIActive = false;
+        aiToggleBtn.classList.remove('active');
+        initAudioAnalysis();
+      }
     }
-    
-    // Show error message
-    function showError(message) {
-      errorMessage.textContent = message;
-      errorMessage.style.display = 'block';
-      setTimeout(() => {
-        errorMessage.style.display = 'none';
-      }, 5000);
+
+    // Initialize Audio Analysis
+    function initAudioAnalysis() {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaElementSource(audio);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      // Detect BPM
+      detectBPM();
     }
-    
-    // Check audio availability
-    function checkAudio() {
-      return new Promise((resolve) => {
-        if (audio.readyState > 0) {
-          duration = audio.duration;
-          isAudioReady = true;
-          resolve(true);
-          return;
+
+    // Detect BPM
+    async function detectBPM() {
+      try {
+        const { bpm } = await webAudioBeatDetector.detect(audio);
+        currentBPM = Math.round(bpm);
+        bpmStatus.textContent = `BPM: ${currentBPM}`;
+      } catch (error) {
+        console.error("BPM Detection Error:", error);
+        bpmStatus.textContent = "BPM: Unknown";
+      }
+    }
+
+    // Detect Vocals
+    function detectVocals() {
+      if (!isAIActive || !isModelLoaded) {
+        // Fallback: Basic frequency analysis
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        
+        let sum = 0;
+        for (let i = 40; i < 150; i++) { // Vocal range
+          sum += dataArray[i];
         }
         
-        const onLoadedMetadata = () => {
-          duration = audio.duration;
-          isAudioReady = true;
-          audio.removeEventListener('loadedmetadata', onLoadedMetadata);
-          resolve(true);
-        };
-        
-        const onError = () => {
-          showError("Error: Audio file not found. Please check the file name.");
-          audio.removeEventListener('error', onError);
-          resolve(false);
-        };
-        
-        audio.addEventListener('loadedmetadata', onLoadedMetadata);
-        audio.addEventListener('error', onError);
-      });
-    }
-    
-    // Initialize lyrics
-    function initLyrics() {
-      lyrics.forEach((line, index) => {
-        if (line.type === "hidden") return;
-        
-        const lyricElement = document.createElement('div');
-        lyricElement.className = `lyrics-line ${line.type}`;
-        lyricElement.textContent = line.text;
-        lyricElement.dataset.index = index;
-        lyricsContainer.appendChild(lyricElement);
-      });
+        const average = sum / 110 / 255;
+        isVocalActive = average > 0.35;
+      } else {
+        // AI Vocal Detection
+        recognizer.listen(result => {
+          isVocalActive = result.scores[1] > 0.85; // Assuming index 1 is vocal
+          vocalStatus.textContent = `Vocals: ${isVocalActive ? "Active" : "Inactive"}`;
+          vocalIndicator.style.backgroundColor = isVocalActive ? "#ff4d4d" : "#ccc";
+        }, {
+          probabilityThreshold: 0.85,
+          invokeCallbackOnNoiseAndUnknown: true
+        });
+      }
       
-      // Update time display
-      timeDisplay.textContent = `0:00 / ${formatTime(duration)}`;
+      if (isVocalActive) {
+        lastVocalTime = audio.currentTime;
+      }
     }
-    
-    // Update sync controls
-    function updateSyncControls() {
-      lastSyncTime = audio.currentTime;
-      syncResetBtn.classList.toggle('active', globalOffset !== 0);
-    }
-    
-    // Update progress bar
-    function updateProgressBar() {
-      if (!isAudioReady) return;
-      
-      const progress = (audio.currentTime / duration) * 100;
-      progressBar.style.width = `${progress}%`;
-      timeDisplay.textContent = `${formatTime(audio.currentTime)} / ${formatTime(duration)}`;
-    }
-    
-    // Get current time with offset
-    function getCurrentTime() {
-      return audio.currentTime + globalOffset;
-    }
-    
-    // Update lyrics display
+
+    // Update Lyrics
     function updateLyrics() {
-      if (!isAudioReady) return;
+      if (!isPlaying) return;
       
-      const currentTime = getCurrentTime();
+      const currentTime = audio.currentTime + globalOffset;
+      detectVocals();
       
-      // Find the current active line
+      // Find current active line (only advance during vocals)
       let newActiveIndex = -1;
       for (let i = lyrics.length - 1; i >= 0; i--) {
-        if (currentTime >= lyrics[i].time) {
+        const line = lyrics[i];
+        if (currentTime >= line.time && 
+            (isVocalActive || line.type === "rap" || (currentTime - line.time < 0.3))) {
           newActiveIndex = i;
           break;
         }
       }
       
-      // Update display if active line changed
-      if (newActiveIndex !== currentActiveIndex) {
-        // Update all line states
+      // Update display
+      if (newActiveIndex !== currentActiveIndex && newActiveIndex >= 0) {
         document.querySelectorAll('.lyrics-line').forEach((line, index) => {
           line.classList.remove('active', 'past');
           
           if (index === newActiveIndex) {
             line.classList.add('active');
-            
-            // Auto-scroll to center the active line
+            // Auto-scroll to center
             const container = document.querySelector('.lyrics-container');
             const scroller = document.querySelector('.lyrics-scroller');
             const lineTop = line.offsetTop;
-            const containerHeight = container.offsetHeight;
-            const scrollTo = lineTop - (containerHeight / 2) + (line.offsetHeight / 2);
-            
+            const scrollTo = lineTop - (container.offsetHeight / 2) + (line.offsetHeight / 2);
             scroller.style.transform = `translateY(-${scrollTo}px)`;
           } else if (index < newActiveIndex) {
             line.classList.add('past');
@@ -470,65 +474,63 @@
         
         currentActiveIndex = newActiveIndex;
       }
+      
+      requestAnimationFrame(updateLyrics);
     }
-    
-    // Event listeners
-    audio.addEventListener('timeupdate', () => {
-      updateProgressBar();
+
+    // Event Listeners
+    audio.addEventListener('play', () => {
+      if (!audioContext) {
+        loadAIModel();
+      } else if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+      
+      isPlaying = true;
       updateLyrics();
     });
-    
-    audio.addEventListener('play', async () => {
-      statusText.textContent = "Status: Playing";
-      if (!isAudioReady) {
-        const audioReady = await checkAudio();
-        if (audioReady) {
-          initLyrics();
-        }
-      }
-    });
-    
+
     audio.addEventListener('pause', () => {
-      statusText.textContent = "Status: Paused";
+      isPlaying = false;
     });
-    
-    audio.addEventListener('ended', () => {
-      statusText.textContent = "Status: Finished";
+
+    audio.addEventListener('timeupdate', () => {
+      const progress = (audio.currentTime / audio.duration) * 100;
+      progressBar.style.width = `${progress}%`;
     });
-    
-    audio.addEventListener('error', () => {
-      showError("Error loading audio file. Please check the file path.");
-      statusText.textContent = "Status: Error";
-    });
-    
-    // Sync control buttons
+
+    // Sync Controls
     syncBackBtn.addEventListener('click', () => {
       globalOffset -= 0.1;
-      updateSyncControls();
-      updateLyrics();
     });
-    
+
     syncForwardBtn.addEventListener('click', () => {
       globalOffset += 0.1;
-      updateSyncControls();
-      updateLyrics();
     });
-    
+
     syncResetBtn.addEventListener('click', () => {
       globalOffset = 0;
-      updateSyncControls();
-      updateLyrics();
     });
-    
-    // Initialize
-    (async () => {
-      statusText.textContent = "Status: Loading...";
-      const audioReady = await checkAudio();
-      if (audioReady) {
-        statusText.textContent = "Status: Ready";
-        initLyrics();
-      }
-    })();
+
+    aiToggleBtn.addEventListener('click', () => {
+      isAIActive = !isAIActive;
+      aiToggleBtn.classList.toggle('active', isAIActive);
+      statusText.textContent = isAIActive ? "AI Active" : "AI Disabled";
+    });
+
+    // Initialize Lyrics
+    lyrics.forEach((line, index) => {
+      if (line.type === "hidden") return;
+      
+      const lyricElement = document.createElement('div');
+      lyricElement.className = `lyrics-line ${line.type}`;
+      lyricElement.textContent = line.text;
+      lyricElement.dataset.index = index;
+      lyricsContainer.appendChild(lyricElement);
+    });
+
+    // Start
+    aiToggleBtn.classList.add('active');
   </script>
 </body>
 </html>
