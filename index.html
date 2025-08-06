@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tabola Bale - Perfect Sync Lyrics</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
-  <!-- TensorFlow.js from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.5.7/dist/speech-commands.min.js"></script>
   <style>
     :root {
       --primary: #ff4d4d;
@@ -236,6 +233,16 @@
       margin-top: 15px;
       font-size: 1.2rem;
     }
+    
+    .offset-display {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 12px;
+      border-radius: 5px;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -269,14 +276,16 @@
     <div class="progress" id="progress"></div>
   </div>
 
+  <div class="offset-display" id="offset-display">Sync Offset: 0.0s</div>
+
   <div class="status-panel">
     <div class="status-item">
       <div class="status-dot loading" id="ai-status-dot"></div>
       <span id="ai-status-text">Loading AI...</span>
     </div>
     <div class="status-item">
-      <div class="status-dot loading" id="bpm-status-dot"></div>
-      <span id="bpm-status-text">BPM: Detecting...</span>
+      <div class="status-dot active" id="bpm-status-dot"></div>
+      <span id="bpm-status-text">BPM: 125</span>
     </div>
     <div class="status-item">
       <div class="status-dot" id="vocal-status-dot"></div>
@@ -394,19 +403,20 @@
     const syncForwardBtn = document.getElementById('sync-forward');
     const syncResetBtn = document.getElementById('sync-reset');
     const aiToggleBtn = document.getElementById('ai-toggle');
+    const offsetDisplay = document.getElementById('offset-display');
 
     // State variables
     let audioContext;
     let analyser;
-    let isAIActive = true;
-    let isModelLoaded = false;
-    let currentBPM = 125; // Default fallback BPM
+    let isAIActive = false; // Disabled by default since model won't load
+    let currentBPM = 125; // Default BPM for this song
     let lastVocalTime = 0;
     let isVocalActive = false;
     let globalOffset = 0;
     let currentActiveIndex = -1;
     let isPlaying = false;
     let animationFrameId;
+    let lastUpdateTime = 0;
 
     // ===== CORE FUNCTIONS ===== //
 
@@ -425,17 +435,8 @@
         loadingText.textContent = "Preparing lyrics...";
         initLyrics();
         
-        // 4. Try to load AI model (non-blocking)
-        loadingText.textContent = "Loading AI model...";
-        loadAIModel().catch(error => {
-          console.warn("AI Model failed to load, using fallback:", error);
-          updateAIStatus("AI Disabled", "error");
-          isAIActive = false;
-          aiToggleBtn.classList.remove('active');
-        });
-        
-        // 5. Detect BPM (non-blocking)
-        detectBPM();
+        // 4. Update BPM status (we'll use default)
+        updateBPMStatus(`BPM: ${currentBPM}`, "active");
         
         // Hide loading overlay
         setTimeout(() => {
@@ -444,6 +445,10 @@
             loadingOverlay.style.display = 'none';
           }, 300);
         }, 1000);
+        
+        // Update AI status (disabled)
+        updateAIStatus("AI Disabled", "error");
+        aiToggleBtn.classList.remove('active');
       } catch (error) {
         console.error("Initialization error:", error);
         loadingText.textContent = "Error initializing. Please refresh.";
@@ -487,107 +492,40 @@
         analyser.connect(audioContext.destination);
       } catch (error) {
         console.error("AudioContext error:", error);
-        updateBPMStatus("Audio Error", "error");
       }
     }
 
-    // Detect BPM
-    async function detectBPM() {
-      try {
-        // Simple beat detection by analyzing peaks
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        
-        let beats = 0;
-        let lastPeakTime = 0;
-        
-        const detect = () => {
-          if (!isPlaying) return;
-          
-          analyser.getByteFrequencyData(dataArray);
-          
-          // Calculate average volume
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          
-          // Detect beat (simple threshold)
-          if (average > 100 && audio.currentTime - lastPeakTime > 0.2) {
-            beats++;
-            lastPeakTime = audio.currentTime;
-          }
-          
-          // Update BPM every 5 seconds
-          if (audio.currentTime > 5) {
-            currentBPM = Math.round((beats / audio.currentTime) * 60);
-            updateBPMStatus(`BPM: ${currentBPM}`, "active");
-          }
-          
-          requestAnimationFrame(detect);
-        };
-        
-        detect();
-      } catch (error) {
-        console.error("BPM detection error:", error);
-        updateBPMStatus("BPM: Default", "error");
-      }
-    }
-
-    // Load AI model
-    async function loadAIModel() {
-      try {
-        // Check if TensorFlow is loaded
-        if (typeof tf === 'undefined') {
-          throw new Error("TensorFlow.js not loaded");
-        }
-        
-        await tf.ready();
-        const recognizer = await speechCommands.create('BROWSER_FFT');
-        await recognizer.ensureModelLoaded();
-        
-        isModelLoaded = true;
-        updateAIStatus("AI Ready", "active");
-        return recognizer;
-      } catch (error) {
-        throw error;
-      }
-    }
-
-    // Detect vocals
+    // Detect vocals using basic frequency analysis
     function detectVocals() {
       try {
-        if (!isAIActive || !isModelLoaded) {
-          // Fallback: Basic frequency analysis
-          const bufferLength = analyser.frequencyBinCount;
-          const dataArray = new Uint8Array(bufferLength);
-          analyser.getByteFrequencyData(dataArray);
-          
-          // Analyze vocal range (300Hz-3kHz)
-          const low = Math.floor(300 / (audioContext.sampleRate / bufferLength));
-          const high = Math.floor(3000 / (audioContext.sampleRate / bufferLength));
-          
-          let sum = 0;
-          for (let i = low; i < high; i++) {
-            sum += dataArray[i];
-          }
-          
-          const average = sum / (high - low);
-          isVocalActive = average > 50; // Threshold
-        } else {
-          // AI detection would go here
-          isVocalActive = Math.random() > 0.3; // Simulate for now
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Analyze vocal range (300Hz-3kHz)
+        const low = Math.floor(300 / (audioContext.sampleRate / bufferLength));
+        const high = Math.floor(3000 / (audioContext.sampleRate / bufferLength));
+        
+        let sum = 0;
+        for (let i = low; i < high; i++) {
+          sum += dataArray[i];
+        }
+        
+        const average = sum / (high - low);
+        const newVocalState = average > 50; // Threshold
+        
+        // Only update if state changed
+        if (newVocalState !== isVocalActive) {
+          isVocalActive = newVocalState;
+          updateVocalStatus(
+            isVocalActive ? "Vocals: Active" : "Vocals: Inactive",
+            isVocalActive ? "active" : "error"
+          );
         }
         
         if (isVocalActive) {
           lastVocalTime = audio.currentTime;
         }
-        
-        updateVocalStatus(
-          isVocalActive ? "Vocals: Active" : "Vocals: Inactive",
-          isVocalActive ? "active" : "error"
-        );
       } catch (error) {
         console.error("Vocal detection error:", error);
         isVocalActive = false;
@@ -612,30 +550,44 @@
       if (!isPlaying) return;
       
       const currentTime = audio.currentTime + globalOffset;
-      detectVocals();
+      const now = performance.now();
+      
+      // Only run vocal detection every 100ms for performance
+      if (now - lastUpdateTime > 100) {
+        detectVocals();
+        lastUpdateTime = now;
+      }
       
       // Find the current active line
       let newActiveIndex = -1;
       for (let i = lyrics.length - 1; i >= 0; i--) {
         const line = lyrics[i];
-        const shouldAdvance = (
-          currentTime >= line.time && 
-          (isVocalActive || line.type === "rap" || (currentTime - line.time < 0.3))
-        );
         
-        if (shouldAdvance) {
-          newActiveIndex = i;
-          break;
+        // Check if we should show this line
+        if (currentTime >= line.time) {
+          // For rap lines or very recent lines, show immediately
+          if (line.type === "rap" || (currentTime - line.time < 0.3)) {
+            newActiveIndex = i;
+            break;
+          }
+          // For normal lines, only show when vocals are active or it's been >1s
+          else if (isVocalActive || (currentTime - line.time > 1.0)) {
+            newActiveIndex = i;
+            break;
+          }
         }
       }
       
       // Update display if active line changed
       if (newActiveIndex !== currentActiveIndex && newActiveIndex >= 0) {
         document.querySelectorAll('.lyrics-line').forEach((line, index) => {
-          line.classList.remove('active', 'past');
+          line.classList.remove('active', 'past', 'highlight');
           
           if (index === newActiveIndex) {
             line.classList.add('active');
+            if (lyrics[index].type === "highlight") {
+              line.classList.add('highlight');
+            }
             
             // Auto-scroll to center the active line
             const container = document.querySelector('.lyrics-container');
@@ -678,6 +630,10 @@
       if (state === "error") vocalStatusDot.classList.add('error');
     }
 
+    function updateOffsetDisplay() {
+      offsetDisplay.textContent = `Sync Offset: ${globalOffset.toFixed(1)}s`;
+    }
+
     // ===== EVENT LISTENERS ===== //
 
     audio.addEventListener('play', () => {
@@ -686,6 +642,7 @@
       }
       
       isPlaying = true;
+      lastUpdateTime = performance.now();
       updateLyrics();
     });
 
@@ -702,14 +659,17 @@
     // Sync controls
     syncBackBtn.addEventListener('click', () => {
       globalOffset -= 0.1;
+      updateOffsetDisplay();
     });
 
     syncForwardBtn.addEventListener('click', () => {
       globalOffset += 0.1;
+      updateOffsetDisplay();
     });
 
     syncResetBtn.addEventListener('click', () => {
       globalOffset = 0;
+      updateOffsetDisplay();
     });
 
     aiToggleBtn.addEventListener('click', () => {
