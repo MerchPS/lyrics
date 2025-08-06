@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tabola Bale - Perfect Sync Lyrics</title>
+  <title>Tabola Bale - AI Sync Lyrics</title>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -243,12 +243,79 @@
       border-radius: 5px;
       font-size: 0.9rem;
     }
+    
+    /* New elements for enhanced features */
+    .bpm-meter {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    .bpm-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: var(--secondary);
+    }
+    
+    .vocal-graph {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      width: 200px;
+      height: 60px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    
+    .vocal-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(to right, #00ff00, #ffcc00);
+      transition: width 0.1s;
+    }
+    
+    .advanced-controls {
+      position: fixed;
+      bottom: 60px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    
+    .sync-confidence {
+      position: fixed;
+      top: 150px;
+      right: 20px;
+      width: 200px;
+      height: 10px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    
+    .confidence-level {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(to right, #ff0000, #ffcc00, #00ff00);
+      transition: width 0.3s;
+    }
   </style>
 </head>
 <body>
   <div class="loading-overlay" id="loading-overlay">
     <div class="loading-spinner"></div>
-    <div class="loading-text" id="loading-text">Initializing Player...</div>
+    <div class="loading-text" id="loading-text">Initializing Advanced Player...</div>
   </div>
 
   <header>
@@ -276,20 +343,39 @@
     <div class="progress" id="progress"></div>
   </div>
 
+  <!-- New UI Elements -->
+  <div class="bpm-meter">
+    <div class="bpm-value" id="bpm-value">-- BPM</div>
+    <div>Real-time BPM</div>
+  </div>
+  
+  <div class="vocal-graph">
+    <div class="vocal-bar" id="vocal-bar"></div>
+  </div>
+  
+  <div class="sync-confidence">
+    <div class="confidence-level" id="confidence-level"></div>
+  </div>
+  
   <div class="offset-display" id="offset-display">Sync Offset: 0.0s</div>
+
+  <div class="advanced-controls">
+    <button class="control-btn" id="bpm-lock">Lock BPM</button>
+    <button class="control-btn" id="vocal-sensitivity">Vocal Sensitivity: Medium</button>
+  </div>
 
   <div class="status-panel">
     <div class="status-item">
-      <div class="status-dot loading" id="ai-status-dot"></div>
-      <span id="ai-status-text">Loading AI...</span>
+      <div class="status-dot active" id="ai-status-dot"></div>
+      <span id="ai-status-text">AI Active</span>
     </div>
     <div class="status-item">
       <div class="status-dot active" id="bpm-status-dot"></div>
-      <span id="bpm-status-text">BPM: 125</span>
+      <span id="bpm-status-text">BPM: Detecting...</span>
     </div>
     <div class="status-item">
       <div class="status-dot" id="vocal-status-dot"></div>
-      <span id="vocal-status-text">Vocals: --</span>
+      <span id="vocal-status-text">Vocals: Analyzing...</span>
     </div>
   </div>
 
@@ -404,12 +490,21 @@
     const syncResetBtn = document.getElementById('sync-reset');
     const aiToggleBtn = document.getElementById('ai-toggle');
     const offsetDisplay = document.getElementById('offset-display');
+    const bpmValue = document.getElementById('bpm-value');
+    const vocalBar = document.getElementById('vocal-bar');
+    const confidenceLevel = document.getElementById('confidence-level');
+    const bpmLockBtn = document.getElementById('bpm-lock');
+    const vocalSensitivityBtn = document.getElementById('vocal-sensitivity');
 
     // State variables
     let audioContext;
     let analyser;
-    let isAIActive = false; // Disabled by default since model won't load
-    let currentBPM = 125; // Default BPM for this song
+    let processor;
+    let isAIActive = true;
+    let currentBPM = 125;
+    let detectedBPM = 125;
+    let isBpmLocked = false;
+    let vocalSensitivity = 1; // 0=low, 1=medium, 2=high
     let lastVocalTime = 0;
     let isVocalActive = false;
     let globalOffset = 0;
@@ -417,6 +512,8 @@
     let isPlaying = false;
     let animationFrameId;
     let lastUpdateTime = 0;
+    let beatTimes = [];
+    let confidence = 0.8;
 
     // ===== CORE FUNCTIONS ===== //
 
@@ -427,7 +524,7 @@
         loadingText.textContent = "Loading audio...";
         await loadAudioMetadata();
         
-        // 2. Initialize Web Audio API
+        // 2. Initialize Web Audio API with advanced processing
         loadingText.textContent = "Initializing audio analysis...";
         initAudioAnalysis();
         
@@ -435,8 +532,9 @@
         loadingText.textContent = "Preparing lyrics...";
         initLyrics();
         
-        // 4. Update BPM status (we'll use default)
-        updateBPMStatus(`BPM: ${currentBPM}`, "active");
+        // 4. Initialize BPM detection
+        loadingText.textContent = "Preparing BPM detection...";
+        initBPMDetection();
         
         // Hide loading overlay
         setTimeout(() => {
@@ -446,9 +544,11 @@
           }, 300);
         }, 1000);
         
-        // Update AI status (disabled)
-        updateAIStatus("AI Disabled", "error");
-        aiToggleBtn.classList.remove('active');
+        // Update initial status
+        updateAIStatus("AI Active", "active");
+        updateBPMStatus("BPM: Detecting...", "active");
+        updateVocalStatus("Vocals: Analyzing...", "loading");
+        updateOffsetDisplay();
       } catch (error) {
         console.error("Initialization error:", error);
         loadingText.textContent = "Error initializing. Please refresh.";
@@ -481,38 +581,129 @@
       });
     }
 
-    // Initialize Web Audio API
+    // Initialize Web Audio API with advanced processing
     function initAudioAnalysis() {
       try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const source = audioContext.createMediaElementSource(audio);
+        
+        // Create analyser for frequency analysis
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
+        
+        // Create script processor for time-domain analysis
+        processor = audioContext.createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = processAudio;
+        
+        // Connect nodes
         source.connect(analyser);
-        analyser.connect(audioContext.destination);
+        analyser.connect(processor);
+        processor.connect(audioContext.destination);
       } catch (error) {
         console.error("AudioContext error:", error);
+        updateBPMStatus("Audio Error", "error");
       }
     }
 
-    // Detect vocals using basic frequency analysis
+    // Initialize BPM detection system
+    function initBPMDetection() {
+      // Start with default BPM
+      updateBPMValue(currentBPM);
+      
+      // Update BPM every second based on detected beats
+      setInterval(() => {
+        if (!isPlaying || isBpmLocked) return;
+        
+        // Calculate BPM from beat intervals
+        if (beatTimes.length > 2) {
+          const intervals = [];
+          for (let i = 1; i < beatTimes.length; i++) {
+            intervals.push(beatTimes[i] - beatTimes[i-1]);
+          }
+          
+          // Calculate average interval
+          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+          detectedBPM = Math.round(60 / avgInterval);
+          
+          // Only update if BPM is reasonable (80-200 range)
+          if (detectedBPM > 80 && detectedBPM < 200) {
+            currentBPM = detectedBPM;
+            updateBPMValue(currentBPM);
+            updateBPMStatus(`BPM: ${currentBPM}`, "active");
+            
+            // Calculate confidence based on beat consistency
+            const variance = intervals.reduce((sum, int) => sum + Math.pow(int - avgInterval, 2), 0) / intervals.length;
+            confidence = Math.max(0, 1 - (variance / 0.01)); // Normalize variance
+            updateConfidence(confidence);
+          }
+        }
+        
+        // Clear old beats (keep last 10 seconds)
+        const now = audio.currentTime;
+        beatTimes = beatTimes.filter(time => now - time < 10);
+      }, 1000);
+    }
+
+    // Process audio data for beat and vocal detection
+    function processAudio(event) {
+      if (!isPlaying) return;
+      
+      // Get time domain data for beat detection
+      const inputBuffer = event.inputBuffer;
+      const inputData = inputBuffer.getChannelData(0);
+      
+      // Simple beat detection (energy threshold)
+      let sum = 0;
+      for (let i = 0; i < inputData.length; i++) {
+        sum += Math.abs(inputData[i]);
+      }
+      const rms = Math.sqrt(sum / inputData.length);
+      
+      // Detect beat if energy is above threshold
+      if (rms > 0.15) { // Adjust threshold as needed
+        beatTimes.push(audio.currentTime);
+      }
+      
+      // Vocal detection (using frequency analysis)
+      detectVocals();
+    }
+
+    // Advanced vocal detection with 3-stage analysis
     function detectVocals() {
       try {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         analyser.getByteFrequencyData(dataArray);
         
-        // Analyze vocal range (300Hz-3kHz)
+        // Stage 1: Frequency analysis (300Hz-3kHz)
         const low = Math.floor(300 / (audioContext.sampleRate / bufferLength));
         const high = Math.floor(3000 / (audioContext.sampleRate / bufferLength));
-        
-        let sum = 0;
+        let vocalSum = 0;
         for (let i = low; i < high; i++) {
-          sum += dataArray[i];
+          vocalSum += dataArray[i];
+        }
+        const vocalAvg = vocalSum / (high - low);
+        
+        // Stage 2: Amplitude analysis
+        const overallSum = dataArray.reduce((a, b) => a + b, 0);
+        const overallAvg = overallSum / bufferLength;
+        
+        // Stage 3: Ratio analysis
+        const ratio = vocalAvg / (overallAvg + 0.001); // Avoid division by zero
+        
+        // Determine vocal presence based on sensitivity
+        let threshold;
+        switch(vocalSensitivity) {
+          case 0: threshold = 1.8; break; // Low sensitivity
+          case 1: threshold = 1.5; break; // Medium sensitivity
+          case 2: threshold = 1.2; break; // High sensitivity
         }
         
-        const average = sum / (high - low);
-        const newVocalState = average > 50; // Threshold
+        const newVocalState = ratio > threshold;
+        
+        // Update vocal bar visualization
+        const vocalLevel = Math.min(100, Math.max(0, (ratio - 1) * 100));
+        vocalBar.style.width = `${vocalLevel}%`;
         
         // Only update if state changed
         if (newVocalState !== isVocalActive) {
@@ -545,33 +736,38 @@
       });
     }
 
-    // Update lyrics display
+    // Update lyrics display with AI-enhanced timing
     function updateLyrics() {
       if (!isPlaying) return;
       
       const currentTime = audio.currentTime + globalOffset;
       const now = performance.now();
       
-      // Only run vocal detection every 100ms for performance
-      if (now - lastUpdateTime > 100) {
-        detectVocals();
-        lastUpdateTime = now;
-      }
-      
-      // Find the current active line
+      // Find the current active line with AI considerations
       let newActiveIndex = -1;
       for (let i = lyrics.length - 1; i >= 0; i--) {
         const line = lyrics[i];
         
+        // Calculate dynamic threshold based on BPM and confidence
+        const bpmFactor = 120 / currentBPM; // Normalize to 120 BPM
+        const dynamicThreshold = 0.3 * bpmFactor * confidence;
+        
         // Check if we should show this line
         if (currentTime >= line.time) {
-          // For rap lines or very recent lines, show immediately
-          if (line.type === "rap" || (currentTime - line.time < 0.3)) {
+          // For rap lines, show immediately with tighter timing
+          if (line.type === "rap") {
+            if (currentTime - line.time < dynamicThreshold * 0.7) {
+              newActiveIndex = i;
+              break;
+            }
+          }
+          // For normal lines, consider vocal state
+          else if (isVocalActive || (currentTime - line.time > dynamicThreshold * 2)) {
             newActiveIndex = i;
             break;
           }
-          // For normal lines, only show when vocals are active or it's been >1s
-          else if (isVocalActive || (currentTime - line.time > 1.0)) {
+          // For highlighted lines, show slightly earlier
+          else if (line.type === "highlight" && currentTime - line.time < dynamicThreshold * 1.5) {
             newActiveIndex = i;
             break;
           }
@@ -589,7 +785,7 @@
               line.classList.add('highlight');
             }
             
-            // Auto-scroll to center the active line
+            // Smooth scroll to center the active line
             const container = document.querySelector('.lyrics-container');
             const scroller = document.querySelector('.lyrics-scroller');
             const lineTop = line.offsetTop;
@@ -606,6 +802,25 @@
       }
       
       animationFrameId = requestAnimationFrame(updateLyrics);
+    }
+
+    // Update BPM display
+    function updateBPMValue(bpm) {
+      bpmValue.textContent = `${bpm} BPM`;
+      
+      // Color code based on BPM
+      if (bpm < 100) {
+        bpmValue.style.color = "#4dff4d"; // Green for slow
+      } else if (bpm < 140) {
+        bpmValue.style.color = "#ffcc00"; // Yellow for medium
+      } else {
+        bpmValue.style.color = "#ff4d4d"; // Red for fast
+      }
+    }
+
+    // Update confidence display
+    function updateConfidence(level) {
+      confidenceLevel.style.width = `${level * 100}%`;
     }
 
     // Update status functions
@@ -679,6 +894,18 @@
         isAIActive ? "AI Active" : "AI Disabled",
         isAIActive ? "active" : "error"
       );
+    });
+
+    bpmLockBtn.addEventListener('click', () => {
+      isBpmLocked = !isBpmLocked;
+      bpmLockBtn.classList.toggle('active', isBpmLocked);
+      bpmLockBtn.textContent = isBpmLocked ? "BPM: Locked" : "Lock BPM";
+    });
+
+    vocalSensitivityBtn.addEventListener('click', () => {
+      vocalSensitivity = (vocalSensitivity + 1) % 3;
+      const levels = ["Low", "Medium", "High"];
+      vocalSensitivityBtn.textContent = `Vocal Sensitivity: ${levels[vocalSensitivity]}`;
     });
 
     // Start initialization
